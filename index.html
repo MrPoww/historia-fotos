@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Historias | Galería</title>
+  <meta name="theme-color" content="#111827">
+  <style>
+    :root{
+      --bg:#0b0f19; /* gris azulado oscuro */
+      --fg:#e5e7eb; /* texto */
+      --muted:#9ca3af;
+      --accent:#22d3ee; /* cian */
+      --accent2:#a78bfa; /* violeta */
+      --card:#111827;
+    }
+    html,body{height:100%;margin:0;background:radial-gradient(1200px 600px at 80% -10%, rgba(167,139,250,.15), transparent 60%), radial-gradient(1000px 500px at 0% 110%, rgba(34,211,238,.10), transparent 60%), var(--bg); color:var(--fg); font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial,sans-serif}
+    *{box-sizing:border-box; -webkit-tap-highlight-color: transparent}
+
+    .app{height:100%; display:grid; place-items:center; padding:16px}
+    .phone{position:relative; width:min(92vw, 430px); height:min(92vh, 860px); border-radius:28px; background:rgba(17,24,39, .9); box-shadow:0 20px 50px rgba(0,0,0,.45), inset 0 0 0 1px rgba(255,255,255,.06); overflow:hidden}
+
+    /* barra superior */
+    .topbar{position:absolute; inset:0 0 auto 0; padding:14px 14px 8px; display:grid; grid-template-columns:1fr auto; gap:12px; align-items:center; pointer-events:none}
+    .progress{display:flex; gap:6px; width:100%}
+    .bar{flex:1; height:3px; background:rgba(255,255,255,.22); border-radius:999px; overflow:hidden}
+    .bar > span{display:block; height:100%; width:0%; background:linear-gradient(90deg, var(--accent), var(--accent2));}
+    .counter{font-size:12px; color:var(--muted)}
+
+    /* contenedor de historia */
+    .story{position:absolute; inset:0; display:grid; grid-template-rows:1fr auto;}
+    .media{position:relative; width:100%; height:100%; background:#0b0f19;}
+    .media img{position:absolute; inset:0; width:100%; height:100%; object-fit:contain; background:#000}
+
+    .caption{padding:16px; background:linear-gradient(0deg, rgba(0,0,0,.55), rgba(0,0,0,0)); color:#f3f4f6; font-size:14px; line-height:1.35;}
+
+    /* zonas táctiles */
+    .tapzones{position:absolute; inset:0; display:grid; grid-template-columns:1fr 1fr}
+    .tapzones > div{height:100%;}
+    .tapzones > div:active{background:rgba(255,255,255,.04)}
+
+    /* controles flotantes */
+    .controls{position:absolute; inset:auto 10px 10px 10px; display:flex; justify-content:space-between; gap:8px}
+    .btn{appearance:none; border:1px solid rgba(255,255,255,.14); background:rgba(0,0,0,.35); color:#fff; padding:10px 12px; border-radius:999px; font-size:13px; letter-spacing:.2px; cursor:pointer; backdrop-filter: blur(8px)}
+    .btn:active{transform:translateY(1px)}
+
+    /* hint */
+    .hint{position:absolute; left:50%; bottom:78px; transform:translateX(-50%); font-size:12px; color:var(--muted); background:rgba(0,0,0,.35); padding:6px 10px; border-radius:999px; border:1px solid rgba(255,255,255,.08)}
+
+    /* safe areas iOS */
+    .safe-top{padding-top: env(safe-area-inset-top)}
+    .safe-bottom{padding-bottom: calc(env(safe-area-inset-bottom) + 8px)}
+
+    /* ocultar mientras carga */
+    .skeleton{position:absolute; inset:0; display:grid; place-items:center; color:#94a3b8}
+    .hidden{display:none}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="phone" id="phone">
+      <div class="topbar safe-top">
+        <div class="progress" id="progress"></div>
+        <div class="counter" id="counter"></div>
+      </div>
+
+      <div class="story" id="story">
+        <div class="media">
+          <div class="skeleton" id="loader">Cargando…</div>
+          <img id="img" alt="Historia" />
+          <div class="tapzones" id="tapzones">
+            <div data-dir="prev" aria-label="Anterior"></div>
+            <div data-dir="next" aria-label="Siguiente"></div>
+          </div>
+        </div>
+        <div class="caption safe-bottom" id="caption"></div>
+      </div>
+
+      <div class="controls">
+        <button class="btn" id="pauseBtn" aria-pressed="false">Pausar</button>
+        <button class="btn" id="fsBtn">Pantalla completa</button>
+        <button class="btn" id="shareBtn">Compartir</button>
+      </div>
+
+      <div class="hint" id="hint">Tocá a la derecha para avanzar • Mantené presionado para pausar</div>
+    </div>
+  </div>
+
+  <script>
+    // 1) Configurá tus imágenes acá (URL absolutas o relativas)
+    const SLIDES = [
+      { src: "images/1.jpg", caption: "Foto 1: descripción corta." },
+      { src: "images/2.jpg", caption: "Foto 2: otra descripción." },
+      { src: "images/3.jpg", caption: "Foto 3: datos útiles." },
+      { src: "images/4.jpg", caption: "Foto 4." },
+      { src: "images/5.jpg", caption: "Foto 5." },
+      // opcional
+      // { src: "images/6.jpg", caption: "Foto 6." },
+    ];
+
+    // 2) Autoplay y tiempos
+    const AUTO_DURATION = 5000; // ms por historia
+    const PROGRESS_TICK = 50;   // ms por actualización de la barrita
+
+    // Referencias UI
+    const img = document.getElementById('img');
+    const caption = document.getElementById('caption');
+    const progress = document.getElementById('progress');
+    const counter = document.getElementById('counter');
+    const tapzones = document.getElementById('tapzones');
+    const pauseBtn = document.getElementById('pauseBtn');
+    const fsBtn = document.getElementById('fsBtn');
+    const shareBtn = document.getElementById('shareBtn');
+    const loader = document.getElementById('loader');
+
+    let index = 0;
+    let playing = true;
+    let elapsed = 0;
+    let timer = null;
+    let longPressTimer = null;
+    let isPointerDown = false;
+
+    // Crear barras de progreso
+    SLIDES.forEach(() => {
+      const b = document.createElement('div');
+      b.className = 'bar';
+      const span = document.createElement('span');
+      b.appendChild(span);
+      progress.appendChild(b);
+    });
+
+    function setCounter(){
+      counter.textContent = `${index+1} / ${SLIDES.length}`;
+    }
+
+    // Precarga (simple)
+    const cache = new Map();
+    function preload(i){
+      if(i<0 || i>=SLIDES.length) return;
+      if(cache.has(i)) return;
+      const pic = new Image();
+      pic.src = SLIDES[i].src;
+      cache.set(i, pic);
+    }
+
+    function show(i){
+      index = (i + SLIDES.length) % SLIDES.length;
+      const s = SLIDES[index];
+      loader.classList.remove('hidden');
+      img.onload = () => loader.classList.add('hidden');
+      img.src = s.src;
+      img.alt = s.caption || `Imagen ${index+1}`;
+      caption.textContent = s.caption || '';
+      elapsed = 0;
+      updateBars();
+      setCounter();
+      // precargar vecinas
+      preload(index+1);
+      preload(index-1);
+    }
+
+    function updateBars(){
+      [...progress.children].forEach((bar, i) => {
+        const span = bar.firstElementChild;
+        if(i < index){
+          span.style.width = '100%';
+        } else if(i === index){
+          const pct = Math.min(100, (elapsed / AUTO_DURATION) * 100);
+          span.style.width = pct + '%';
+        } else {
+          span.style.width = '0%';
+        }
+      });
+    }
+
+    function tick(){
+      if(!playing) return;
+      elapsed += PROGRESS_TICK;
+      updateBars();
+      if(elapsed >= AUTO_DURATION){
+        next();
+      }
+    }
+
+    function play(){
+      if(timer) clearInterval(timer);
+      timer = setInterval(tick, PROGRESS_TICK);
+      playing = true;
+      pauseBtn.setAttribute('aria-pressed', 'false');
+      pauseBtn.textContent = 'Pausar';
+    }
+    function pause(){
+      playing = false;
+      if(timer) clearInterval(timer);
+      pauseBtn.setAttribute('aria-pressed', 'true');
+      pauseBtn.textContent = 'Reanudar';
+    }
+
+    function next(){ show(index+1); }
+    function prev(){ show(index-1); }
+
+    // Controles touch: tap izquierdo/derecho y long-press para pausar
+    tapzones.addEventListener('pointerdown', e => {
+      isPointerDown = true;
+      longPressTimer = setTimeout(() => { pause(); }, 210);
+    });
+    tapzones.addEventListener('pointerup', e => {
+      const target = e.target.closest('[data-dir]');
+      clearTimeout(longPressTimer);
+      if(!target) return;
+      if(isPointerDown && playing){
+        // tap corto mientras reproduce: avanzar/retroceder
+        target.dataset.dir === 'next' ? next() : prev();
+      }
+      isPointerDown = false;
+      if(!playing){ play(); }
+    });
+    tapzones.addEventListener('pointerleave', () => { clearTimeout(longPressTimer); isPointerDown=false; });
+
+    // Gestos de swipe
+    let sx=0, sy=0;
+    tapzones.addEventListener('touchstart', e => { const t=e.touches[0]; sx=t.clientX; sy=t.clientY; }, {passive:true});
+    tapzones.addEventListener('touchend', e => {
+      const t=e.changedTouches[0];
+      const dx = t.clientX - sx; const dy = t.clientY - sy;
+      if(Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy)){
+        dx < 0 ? next() : prev();
+      }
+    }, {passive:true});
+
+    // Botones
+    pauseBtn.addEventListener('click', () => playing ? pause() : play());
+    fsBtn.addEventListener('click', async () => {
+      const el = document.getElementById('phone');
+      try{
+        if(!document.fullscreenElement){ await el.requestFullscreen?.(); } else { await document.exitFullscreen?.(); }
+      }catch(err){ /* ignorar */ }
+    });
+    shareBtn.addEventListener('click', async () => {
+      const url = location.href;
+      try{
+        if(navigator.share){ await navigator.share({title:'Galería', text:'Mirá estas fotos', url}); }
+        else { await navigator.clipboard.writeText(url); alert('Enlace copiado al portapapeles'); }
+      }catch(err){ /* cancelado */ }
+    });
+
+    // Teclado (por si la abrís en PC)
+    document.addEventListener('keydown', e => {
+      if(e.key==='ArrowRight' || e.key===' '){ next(); }
+      if(e.key==='ArrowLeft'){ prev(); }
+      if(e.key==='k' || e.key==='p'){ playing ? pause() : play(); }
+    });
+
+    // Iniciar
+    show(0);
+    play();
+
+    // Ocultar hint luego de unos segundos
+    setTimeout(()=> document.getElementById('hint').style.display='none', 5000);
+  </script>
+</body>
+</html>
